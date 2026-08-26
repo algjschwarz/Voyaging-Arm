@@ -1,0 +1,6 @@
+*.FCStd1
+*.FCBak
+*.FCStd[0-9]*
+.~*
+*.lock
+__pycache__/
