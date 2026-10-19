@@ -1,4 +1,5 @@
 #pragma once
+#include <ostream>
 
 namespace arm{
     // includes all angles for servos, stored in radians
@@ -27,5 +28,11 @@ namespace arm{
         int length3;
     };
 
-    position forward(arm_angles angles, arm_constants constants);
+    position forward(arm_angles input_angles, arm_constants constants);
+    // wrist_angle is in radians, calculates values assuming link 3 is the end of the arm 
+    arm_angles inverse(position input_position, arm_constants constants, double wrist_angle);
+
+    // allow `std::cout << angles` / `std::cout << pos`
+    std::ostream& operator<<(std::ostream& os, const arm_angles& angles);
+    std::ostream& operator<<(std::ostream& os, const position& pos);
 }
