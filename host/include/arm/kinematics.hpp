@@ -20,12 +20,17 @@ namespace arm{
         double z = 0;
     };
 
+    // lengths in mm, from CAD via presets.hpp / geometry.hpp. z is up, base yaw is atan2(y, x).
+    // Each joint matches a named coordinate system in cad/arm/Arm.FCStd (rotator_shoulder,
+    // link_far_joint, wrist_near_joint, wrist_roll).
     struct arm_constants
     {
-        int shoulder_height;
-        int length1;
-        int length2;
-        int length3;
+        double shoulder_height;   // base (z = 0) to the shoulder axis
+        double length1;           // shoulder axis to elbow axis
+        double length2;           // elbow axis to wrist pitch axis
+        double length3;           // along the roll axis to the jaw tips
+        double shoulder_offset;   // yaw axis to shoulder axis, horizontal, in the reach direction
+        double wrist_offset;      // wrist pitch axis to roll axis, perpendicular to link 3
     };
 
     position forward(arm_angles input_angles, arm_constants constants);
