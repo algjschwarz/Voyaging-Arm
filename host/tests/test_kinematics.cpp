@@ -40,10 +40,11 @@ TEST(Forward, RealArmAtZeroShowsTheOffsets) {
 
 TEST(Inverse, RoundTripsThroughForwardOnTheRealArm) {
     const arm_constants& c = VOYAGING_ARM;
+    // inverse() always picks the elbow-up branch, which is a negative elbow angle
     const arm_angles cases[] = {
-        {.base = 0.3, .shoulder = 1.0, .elbow = 0.8, .wrist = -0.5},
-        {.base = -1.2, .shoulder = 0.4, .elbow = 1.2, .wrist = 0.2},
-        {.base = 2.0, .shoulder = 1.3, .elbow = 0.3, .wrist = -1.0},
+        {.base = 0.3, .shoulder = 1.0, .elbow = -0.8, .wrist = -0.5},
+        {.base = -1.2, .shoulder = 0.4, .elbow = -1.2, .wrist = 0.2},
+        {.base = 2.0, .shoulder = 1.3, .elbow = -0.3, .wrist = -1.0},
     };
     for (const arm_angles& in : cases) {
         position p = forward(in, c);
