@@ -1,0 +1,2 @@
+# Servo calibration, written by arm_calibrate. Joints not listed are never driven.
+# name        joint_a  cmd_a  joint_b  cmd_b  min_cmd  max_cmd

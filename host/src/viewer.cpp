@@ -6,13 +6,19 @@
 // Each slider has a text box next to its label: click it, type a value, press Enter (or click
 // away) to apply. Typed values may go past the slider's range.
 // Right-drag orbits the camera, mouse wheel zooms. F11 toggles fullscreen.
+//
+// The sliders set a target pose (drawn as a faint ghost). The solid arm glides toward it at a
+// fixed joint speed, and that gliding pose is handed to the caller every frame (see viewer.hpp).
+// The viewer itself knows nothing about the real arm.
 
 #include <raylib.h>
 #define RAYGUI_IMPLEMENTATION
 #include <raygui.h>
 
 #include "arm/kinematics.hpp"
+#include "arm/motion.hpp"
 #include "arm/presets.hpp"
+#include "arm/viewer.hpp"
 
 #include <array>
 #include <cmath>
@@ -32,6 +38,10 @@ constexpr float kScale = 0.01f;
 
 constexpr double deg2rad(double d) { return d * std::numbers::pi / 180.0; }
 constexpr double rad2deg(double r) { return r * 180.0 / std::numbers::pi; }
+
+// How fast every joint moves toward the target. Must stay below what the servos can do
+// (MG996R is ~60 deg per 0.17 s unloaded), or the real arm lags behind the simulation.
+constexpr double kJointSpeed = deg2rad(90.0);  // rad/s
 
 // Arm frame is z-up. raylib is y-up. x stays, arm z becomes scene y, arm y becomes scene -z
 // (that keeps the frame right-handed).
@@ -98,6 +108,15 @@ void drawArm(const arm::arm_angles& angles, const arm::arm_constants& c) {
     DrawSphere(s[2], 0.08f, DARKGRAY);
     DrawSphere(s[3], 0.08f, DARKGRAY);
     DrawSphere(s[5], 0.05f, Color{255, 200, 40, 255});  // tip
+}
+
+// Thin outline of a pose, used for the target the solid arm is moving toward.
+void drawGhost(const arm::arm_angles& angles, const arm::arm_constants& c) {
+    const Chain ch = jointPoints(angles, c);
+    const Color ghost{120, 120, 140, 120};
+    for (std::size_t i = 1; i + 1 < ch.p.size(); ++i) {
+        DrawCylinderEx(toScene(ch.p[i]), toScene(ch.p[i + 1]), 0.015f, 0.015f, 6, ghost);
+    }
 }
 
 void drawAxes() {
@@ -182,7 +201,7 @@ void readoutRow(int x, int& y, const char* text, Color color = DARKGRAY) {
 
 }  // namespace
 
-int main() {
+void arm::run_viewer(const pose_sink& on_pose) {
     const arm::arm_constants c = arm::VOYAGING_ARM;
 
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
@@ -202,6 +221,7 @@ int main() {
     std::array<Field, 4> fields{};  // one per slider row; only one mode's rows show at a time
     arm::arm_angles lastValid = arm::inverse({ui.tx, ui.ty, ui.tz}, c, deg2rad(ui.tpitch));
     if (!isValid(lastValid)) lastValid = arm::arm_angles{};
+    arm::arm_angles commanded = lastValid;  // where the arm is right now, gliding toward the target
 
     // Debug aid: ARM_VIEWER_SCREENSHOT=/path/out.png saves a frame after startup and quits.
     const char* screenshotPath = std::getenv("ARM_VIEWER_SCREENSHOT");
@@ -298,6 +318,14 @@ int main() {
             for (Field& f : fields) f.editing = false;
         }
 
+        // ---- glide toward the target, and hand that pose to whoever is listening
+        const double dt = GetFrameTime();
+        commanded = arm::step_toward(commanded, shown, kJointSpeed, dt);
+        const viewer_status status = on_pose ? on_pose(commanded, dt) : viewer_status{"simulation only", true};
+
+        y += 44;
+        readoutRow(px, y, status.text.c_str(), status.ok ? DARKGREEN : RED);
+
         DrawText("right-drag: orbit   wheel: zoom   F11: fullscreen", px, screenH - 40, 10, GRAY);
         DrawText("click a box to type a value, Enter applies", px, screenH - 28, 10, GRAY);
         DrawText("axes: x red, y green, z blue", px, screenH - 16, 10, GRAY);
@@ -307,7 +335,8 @@ int main() {
         BeginMode3D(cam);
         DrawGrid(10, 1.0f);  // 1 m square, 10 cm cells
         drawAxes();
-        drawArm(shown, c);
+        drawGhost(shown, c);
+        drawArm(commanded, c);
         if (ui.mode == 0) {
             DrawSphereWires(toScene(target), 0.09f, 8, 8, reachable ? Color{0, 170, 60, 255} : RED);
         }
@@ -323,5 +352,4 @@ int main() {
     }
 
     CloseWindow();
-    return 0;
 }
