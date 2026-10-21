@@ -1,5 +1,8 @@
 {
     "cmake.sourceDirectory": "/home/alstryka/Voyaging-Arm/host",
-    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+    "C_Cpp.default.compileCommands": [
+        "${workspaceFolder}/build/compile_commands.json",
+        "${workspaceFolder}/firmware/compile_commands.json"
+    ],
     "C_Cpp.default.cppStandard": "c++20"
 }

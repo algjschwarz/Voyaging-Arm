@@ -11,3 +11,4 @@ __pycache__/
 **/.vscode/launch.json
 **/.vscode/ipch
 build/
+firmware/compile_commands.json
