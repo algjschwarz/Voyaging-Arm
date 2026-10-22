@@ -1,3 +1,5 @@
 # Servo calibration, written by arm_calibrate. Joints not listed are never driven.
 # name        joint_a  cmd_a  joint_b  cmd_b  min_cmd  max_cmd
 base              0.0   85.0     90.0  180.0      0.0    180.0
+shoulder          0.0    8.0     90.0  103.0      0.0    180.0
+elbow           -90.0   90.0      0.0  180.0      0.0    180.0
