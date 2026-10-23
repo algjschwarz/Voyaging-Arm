@@ -1,12 +1,12 @@
-// arm: drives the real arm from the viewer.
+// arm: drives the real arm from the simulation.
 //   arm /dev/ttyACM0
-// Every servo must be calibrated first (arm_calibrate). For the simulation alone, run arm_viewer.
+// Every servo must be calibrated first (arm_calibrate). For the simulation alone, run arm_simulation.
 //
-// The viewer hands over the pose every frame; this sends it to the Arduino 50 times a second.
+// The simulation hands over the pose every frame; this sends it to the Arduino 50 times a second.
 
 #include "arm/serial_link.hpp"
 #include "arm/servo_map.hpp"
-#include "arm/viewer.hpp"
+#include "arm/simulation.hpp"
 
 #include <cstdio>
 #include <exception>
@@ -23,7 +23,7 @@ constexpr double kSendPeriod = 0.02;  // s between pose lines to the Arduino (50
 int main(int argc, char** argv) {
     if (argc < 2) {
         std::fprintf(stderr, "usage: %s <serial port>\n  e.g. %s /dev/ttyACM0\n"
-                             "  (for the simulation alone, run arm_viewer)\n", argv[0], argv[0]);
+                             "  (for the simulation alone, run arm_simulation)\n", argv[0], argv[0]);
         return 1;
     }
     const std::string port = argv[1];
@@ -35,7 +35,7 @@ int main(int argc, char** argv) {
         bool alive = true;
         double sinceSend = kSendPeriod;  // send on the first frame
         std::string arduinoError;
-        arm::run_viewer([&](const arm::arm_angles& pose, double dt) -> arm::viewer_status {
+        arm::run_simulation([&](const arm::arm_angles& pose, double dt) -> arm::simulation_status {
             if (!alive) return {"arm: disconnected, restart arm to reconnect", false};
             try {
                 sinceSend += dt;

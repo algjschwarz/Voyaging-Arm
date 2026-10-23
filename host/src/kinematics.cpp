@@ -47,6 +47,29 @@ namespace arm
         return calculated_angles;
     }
 
+    joint_chain joint_points(arm_angles a, arm_constants c)
+    {
+        const double se = a.shoulder + a.elbow;
+        const double wa = se + a.wrist;
+
+        // in the vertical plane through the arm: (r = reach, z = height)
+        struct RZ { double r, z; };
+        std::array<RZ, 6> rz{};
+        rz[0] = {0.0, 0.0};
+        rz[1] = {c.shoulder_offset, c.shoulder_height};
+        rz[2] = {rz[1].r + c.length1 * cos(a.shoulder), rz[1].z + c.length1 * sin(a.shoulder)};
+        rz[3] = {rz[2].r + c.length2 * cos(se),         rz[2].z + c.length2 * sin(se)};
+        rz[4] = {rz[3].r - c.wrist_offset * sin(wa),    rz[3].z + c.wrist_offset * cos(wa)};
+        rz[5] = {rz[4].r + c.length3 * cos(wa),         rz[4].z + c.length3 * sin(wa)};
+
+        joint_chain out{};
+        const double cb = cos(a.base), sb = sin(a.base);
+        for (std::size_t i = 0; i < rz.size(); ++i) {
+            out[i] = { rz[i].r * cb, rz[i].r * sb, rz[i].z };
+        }
+        return out;
+    }
+
     std::ostream& operator<<(std::ostream& os, const arm_angles& angles)
     {
         std::ios old_state(nullptr);

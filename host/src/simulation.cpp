@@ -1,4 +1,4 @@
-// Interactive viewer for the Voyaging Arm.
+// Interactive simulation of the Voyaging Arm.
 //
 // Draws the arm from the kinematics constants and lets you drive it two ways:
 //   TARGET mode: sliders set the tip position + wrist pitch, inverse() solves the joints.
@@ -8,18 +8,22 @@
 // Right-drag orbits the camera, mouse wheel zooms. F11 toggles fullscreen.
 //
 // The sliders set a target pose (drawn as a faint ghost). The solid arm glides toward it at a
-// fixed joint speed, and that gliding pose is handed to the caller every frame (see viewer.hpp).
-// The viewer itself knows nothing about the real arm.
+// fixed joint speed, and that gliding pose is handed to the caller every frame (see simulation.hpp).
+// A target outside VOYAGING_ARM_LIMITS (a joint too far, or too close to the table) is refused,
+// and the glide stops rather than take a step that would break them.
+// The simulation itself knows nothing about the real arm.
 
 #include <raylib.h>
 #define RAYGUI_IMPLEMENTATION
 #include <raygui.h>
 
 #include "arm/kinematics.hpp"
+#include "arm/limits.hpp"
 #include "arm/motion.hpp"
 #include "arm/presets.hpp"
-#include "arm/viewer.hpp"
+#include "arm/simulation.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -58,38 +62,10 @@ double distance(const arm::position& a, const arm::position& b) {
     return std::sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z));
 }
 
-// Every joint along the chain, in arm coordinates (mm). Same math as arm::forward(),
-// just keeping the intermediate points so we can draw the links.
-//   0 base origin, 1 shoulder axis, 2 elbow axis, 3 wrist pitch axis,
-//   4 start of the roll axis (wrist_offset away from 3), 5 tip
-struct Chain { std::array<arm::position, 6> p; };
-
-Chain jointPoints(const arm::arm_angles& a, const arm::arm_constants& c) {
-    const double se = a.shoulder + a.elbow;
-    const double wa = se + a.wrist;
-
-    // in the vertical plane through the arm: (r = reach, z = height)
-    struct RZ { double r, z; };
-    std::array<RZ, 6> rz{};
-    rz[0] = {0.0, 0.0};
-    rz[1] = {c.shoulder_offset, c.shoulder_height};
-    rz[2] = {rz[1].r + c.length1 * std::cos(a.shoulder), rz[1].z + c.length1 * std::sin(a.shoulder)};
-    rz[3] = {rz[2].r + c.length2 * std::cos(se),         rz[2].z + c.length2 * std::sin(se)};
-    rz[4] = {rz[3].r - c.wrist_offset * std::sin(wa),    rz[3].z + c.wrist_offset * std::cos(wa)};
-    rz[5] = {rz[4].r + c.length3 * std::cos(wa),         rz[4].z + c.length3 * std::sin(wa)};
-
-    Chain out{};
-    const double cb = std::cos(a.base), sb = std::sin(a.base);
-    for (std::size_t i = 0; i < rz.size(); ++i) {
-        out.p[i] = { rz[i].r * cb, rz[i].r * sb, rz[i].z };
-    }
-    return out;
-}
-
 void drawArm(const arm::arm_angles& angles, const arm::arm_constants& c) {
-    const Chain ch = jointPoints(angles, c);
+    const arm::joint_chain ch = arm::joint_points(angles, c);
     std::array<Vector3, 6> s{};
-    for (std::size_t i = 0; i < s.size(); ++i) s[i] = toScene(ch.p[i]);
+    for (std::size_t i = 0; i < s.size(); ++i) s[i] = toScene(ch[i]);
 
     // base disc + vertical pedestal up to shoulder height, then the small shoulder offset stub
     DrawCylinder({0, 0, 0}, 0.35f, 0.35f, 0.04f, 24, Color{90, 90, 100, 255});
@@ -112,10 +88,10 @@ void drawArm(const arm::arm_angles& angles, const arm::arm_constants& c) {
 
 // Thin outline of a pose, used for the target the solid arm is moving toward.
 void drawGhost(const arm::arm_angles& angles, const arm::arm_constants& c) {
-    const Chain ch = jointPoints(angles, c);
+    const arm::joint_chain ch = arm::joint_points(angles, c);
     const Color ghost{120, 120, 140, 120};
-    for (std::size_t i = 1; i + 1 < ch.p.size(); ++i) {
-        DrawCylinderEx(toScene(ch.p[i]), toScene(ch.p[i + 1]), 0.015f, 0.015f, 6, ghost);
+    for (std::size_t i = 1; i + 1 < ch.size(); ++i) {
+        DrawCylinderEx(toScene(ch[i]), toScene(ch[i + 1]), 0.015f, 0.015f, 6, ghost);
     }
 }
 
@@ -129,7 +105,7 @@ void drawAxes() {
 struct UiState {
     int mode = 0;  // 0 = TARGET (IK), 1 = JOINTS (FK)
     // TARGET mode: tip position in mm, wrist pitch in degrees (absolute, 0 = horizontal)
-    float tx = 250.0f, ty = 0.0f, tz = 150.0f, tpitch = 0.0f;
+    float tx = 280.0f, ty = 0.0f, tz = 150.0f, tpitch = 0.0f;  // must be inside VOYAGING_ARM_LIMITS
     // JOINTS mode: joint angles in degrees
     float jbase = 0.0f, jshoulder = 0.0f, jelbow = 0.0f, jwrist = 0.0f;
 };
@@ -194,6 +170,14 @@ bool sliderRow(int x, int& y, int w, const char* name, const char* unit, float* 
     return changed;
 }
 
+// sliderRow for a joint angle in degrees, held to `range` whether dragged or typed.
+void limitedSliderRow(int x, int& y, int w, const char* name, float* v, const arm::joint_range& range, Field& f) {
+    const float lo = float(rad2deg(range.min));
+    const float hi = float(rad2deg(range.max));
+    sliderRow(x, y, w, name, "deg", v, lo, hi, f);
+    *v = std::clamp(*v, lo, hi);
+}
+
 void readoutRow(int x, int& y, const char* text, Color color = DARKGRAY) {
     DrawText(text, x, y, 20, color);
     y += 24;
@@ -201,8 +185,9 @@ void readoutRow(int x, int& y, const char* text, Color color = DARKGRAY) {
 
 }  // namespace
 
-void arm::run_viewer(const pose_sink& on_pose) {
+void arm::run_simulation(const pose_sink& on_pose) {
     const arm::arm_constants c = arm::VOYAGING_ARM;
+    const arm::arm_limits limits = arm::VOYAGING_ARM_LIMITS;
 
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(kInitialWidth, kInitialHeight, "Voyaging Arm");
@@ -223,8 +208,8 @@ void arm::run_viewer(const pose_sink& on_pose) {
     if (!isValid(lastValid)) lastValid = arm::arm_angles{};
     arm::arm_angles commanded = lastValid;  // where the arm is right now, gliding toward the target
 
-    // Debug aid: ARM_VIEWER_SCREENSHOT=/path/out.png saves a frame after startup and quits.
-    const char* screenshotPath = std::getenv("ARM_VIEWER_SCREENSHOT");
+    // Debug aid: ARM_SIMULATION_SCREENSHOT=/path/out.png saves a frame after startup and quits.
+    const char* screenshotPath = std::getenv("ARM_SIMULATION_SCREENSHOT");
     int frame = 0;
 
     while (!WindowShouldClose()) {
@@ -259,12 +244,13 @@ void arm::run_viewer(const pose_sink& on_pose) {
         y += 40;
         if (ui.mode != prevMode) {
             if (ui.mode == 1) seedJointsFrom(ui, lastValid);
-            else seedTargetFrom(ui, jointsFromUi(ui), c);
+            else seedTargetFrom(ui, lastValid, c);
             for (Field& f : fields) f.editing = false;
         }
 
         arm::arm_angles shown;
         bool reachable = true;
+        std::string blocked;  // why the target would hurt the arm; empty when it's safe
         arm::position target{ui.tx, ui.ty, ui.tz};
 
         if (ui.mode == 0) {
@@ -277,30 +263,38 @@ void arm::run_viewer(const pose_sink& on_pose) {
             target = {ui.tx, ui.ty, ui.tz};
             const arm::arm_angles sol = arm::inverse(target, c, deg2rad(ui.tpitch));
             reachable = isValid(sol);
-            if (reachable) lastValid = sol;
+            if (reachable) blocked = arm::why_unsafe(sol, c, limits);
+            if (reachable && blocked.empty()) lastValid = sol;
             shown = lastValid;
 
             y += 8;
-            readoutRow(px, y, reachable ? "reachable" : "UNREACHABLE (showing last pose)", reachable ? DARKGREEN : RED);
+            if (!reachable) readoutRow(px, y, "UNREACHABLE (showing last pose)", RED);
+            else if (!blocked.empty()) readoutRow(px, y, TextFormat("BLOCKED: %s", blocked.c_str()), RED);
+            else readoutRow(px, y, "reachable", DARKGREEN);
             readoutRow(px, y, TextFormat("base      %7.1f deg", rad2deg(shown.base)));
             readoutRow(px, y, TextFormat("shoulder  %7.1f deg", rad2deg(shown.shoulder)));
             readoutRow(px, y, TextFormat("elbow     %7.1f deg", rad2deg(shown.elbow)));
             readoutRow(px, y, TextFormat("wrist     %7.1f deg", rad2deg(shown.wrist)));
-            if (reachable) {
+            if (reachable && blocked.empty()) {
                 const double err = distance(arm::forward(shown, c), target);
                 readoutRow(px, y, TextFormat("IK error  %.3f mm", err), err < 0.01 ? DARKGREEN : RED);
             }
         } else {
-            sliderRow(px, y, pw, "base", "deg", &ui.jbase, -180.0f, 180.0f, fields[0]);
-            sliderRow(px, y, pw, "shoulder", "deg", &ui.jshoulder, -90.0f, 180.0f, fields[1]);
-            sliderRow(px, y, pw, "elbow", "deg", &ui.jelbow, -180.0f, 180.0f, fields[2]);  // inverse() now returns negative (elbow-up)
-            sliderRow(px, y, pw, "wrist", "deg", &ui.jwrist, -180.0f, 180.0f, fields[3]);
+            // each slider spans exactly its joint's limits; typed values are held to them too
+            limitedSliderRow(px, y, pw, "base", &ui.jbase, limits.base, fields[0]);
+            limitedSliderRow(px, y, pw, "shoulder", &ui.jshoulder, limits.shoulder, fields[1]);
+            limitedSliderRow(px, y, pw, "elbow", &ui.jelbow, limits.elbow, fields[2]);  // inverse() returns negative (elbow-up)
+            limitedSliderRow(px, y, pw, "wrist", &ui.jwrist, limits.wrist, fields[3]);
 
-            shown = jointsFromUi(ui);
-            lastValid = shown;
+            const arm::arm_angles wanted = jointsFromUi(ui);
+            blocked = arm::why_unsafe(wanted, c, limits);
+            if (blocked.empty()) lastValid = wanted;
+            shown = lastValid;
             target = arm::forward(shown, c);
 
             y += 8;
+            if (!blocked.empty()) readoutRow(px, y, TextFormat("BLOCKED: %s", blocked.c_str()), RED);
+            else readoutRow(px, y, "safe", DARKGREEN);
             readoutRow(px, y, TextFormat("tip x     %7.1f mm", target.x));
             readoutRow(px, y, TextFormat("tip y     %7.1f mm", target.y));
             readoutRow(px, y, TextFormat("tip z     %7.1f mm", target.z));
@@ -320,10 +314,15 @@ void arm::run_viewer(const pose_sink& on_pose) {
 
         // ---- glide toward the target, and hand that pose to whoever is listening
         const double dt = GetFrameTime();
-        commanded = arm::step_toward(commanded, shown, kJointSpeed, dt);
-        const viewer_status status = on_pose ? on_pose(commanded, dt) : viewer_status{"simulation only", true};
+        // Two safe poses can still have an unsafe one between them (e.g. swinging the claw through
+        // the table), so every step is checked too; the arm holds still rather than take a bad one.
+        const arm::arm_angles next = arm::step_toward(commanded, shown, kJointSpeed, dt);
+        const std::string pathBlocked = arm::why_unsafe(next, c, limits);
+        if (pathBlocked.empty()) commanded = next;
+        const simulation_status status = on_pose ? on_pose(commanded, dt) : simulation_status{"simulation only", true};
 
         y += 44;
+        if (!pathBlocked.empty()) readoutRow(px, y, TextFormat("path blocked: %s", pathBlocked.c_str()), RED);
         readoutRow(px, y, status.text.c_str(), status.ok ? DARKGREEN : RED);
 
         DrawText("right-drag: orbit   wheel: zoom   F11: fullscreen", px, screenH - 40, 10, GRAY);
@@ -338,7 +337,7 @@ void arm::run_viewer(const pose_sink& on_pose) {
         drawGhost(shown, c);
         drawArm(commanded, c);
         if (ui.mode == 0) {
-            DrawSphereWires(toScene(target), 0.09f, 8, 8, reachable ? Color{0, 170, 60, 255} : RED);
+            DrawSphereWires(toScene(target), 0.09f, 8, 8, reachable && blocked.empty() ? Color{0, 170, 60, 255} : RED);
         }
         EndMode3D();
         EndScissorMode();

@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 
-add_library(arm_core src/kinematics.cpp src/motion.cpp src/servo_map.cpp src/serial_link.cpp)
+add_library(arm_core src/kinematics.cpp src/limits.cpp src/motion.cpp src/servo_map.cpp src/serial_link.cpp)
 target_include_directories(arm_core PUBLIC include)
 
 # Servo calibration, written by arm_calibrate and read by arm.
@@ -20,7 +20,7 @@ FetchContent_Declare(googletest
 FetchContent_MakeAvailable(googletest)
 
 enable_testing()
-add_executable(arm_tests tests/test_kinematics.cpp tests/test_motion.cpp tests/test_servo_map.cpp)
+add_executable(arm_tests tests/test_kinematics.cpp tests/test_limits.cpp tests/test_motion.cpp tests/test_servo_map.cpp)
 target_link_libraries(arm_tests PRIVATE arm_core GTest::gtest_main)
 include(GoogleTest)
 gtest_discover_tests(arm_tests)
@@ -34,13 +34,13 @@ FetchContent_Declare(raygui
   URL https://github.com/raysan5/raygui/archive/refs/tags/4.0.zip)
 FetchContent_MakeAvailable(raygui)
 
-# The viewer window, shared by the simulation-only program and the real-arm program.
-add_library(arm_viewer_lib src/viewer.cpp)
-target_include_directories(arm_viewer_lib SYSTEM PRIVATE ${raygui_SOURCE_DIR}/src)
-target_link_libraries(arm_viewer_lib PUBLIC arm_core PRIVATE raylib)
+# The simulation window, shared by the simulation-only program and the real-arm program.
+add_library(arm_simulation_lib src/simulation.cpp)
+target_include_directories(arm_simulation_lib SYSTEM PRIVATE ${raygui_SOURCE_DIR}/src)
+target_link_libraries(arm_simulation_lib PUBLIC arm_core PRIVATE raylib)
 
-add_executable(arm_viewer src/viewer_main.cpp)        # simulation only
-target_link_libraries(arm_viewer PRIVATE arm_viewer_lib)
+add_executable(arm_simulation src/simulation_main.cpp)  # simulation only
+target_link_libraries(arm_simulation PRIVATE arm_simulation_lib)
 
-add_executable(arm src/main.cpp)                      # drives the real arm
-target_link_libraries(arm PRIVATE arm_viewer_lib)
+add_executable(arm src/main.cpp)                        # drives the real arm
+target_link_libraries(arm PRIVATE arm_simulation_lib)
