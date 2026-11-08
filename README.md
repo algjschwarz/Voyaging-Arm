@@ -76,7 +76,7 @@ when elbow up is outside the limits.
 
 **Joint limits** (`host/include/arm/limits.hpp`). Found by sweeping each joint in the CAD until
 parts collide, then backing off a 5 degree margin. Both programs then narrow them to what each
-servo reaches as calibrated, so the simulation never shows a pose the real servo would stop short of.
+servo reaches as calibrated, so the simulation never shows a pose the servo would stop short of.
 
 **Motion** (`host/src/motion.cpp`). Every joint moves toward its target at no more than 90 deg/s,
 below the MG996R's top speed. Each step is safety checked before it is sent.
