@@ -13,6 +13,8 @@ constexpr arm_limits kLimits{
     .shoulder = {deg(0), deg(170)},
     .elbow = {deg(-150), deg(150)},
     .wrist = {deg(-120), deg(120)},
+    .wrist_spin = {deg(-90), deg(90)},
+    .gripper = {deg(0), deg(90)},
     .ground_clearance = 10.0,
 };
 
@@ -45,6 +47,12 @@ TEST(WhyUnsafe, NamesTheJointPastItsLimit) {
     a = safe;
     a.wrist = deg(121);
     EXPECT_EQ(why_unsafe(a, VOYAGING_ARM, kLimits), "wrist past 120 deg");
+    a = safe;
+    a.wrist_spin = deg(-91);
+    EXPECT_EQ(why_unsafe(a, VOYAGING_ARM, kLimits), "wrist roll past -90 deg");
+    a = safe;
+    a.gripper = deg(95);
+    EXPECT_EQ(why_unsafe(a, VOYAGING_ARM, kLimits), "gripper past 90 deg");
 }
 
 TEST(WhyUnsafe, KeepsTheTipOffTheTable) {

@@ -23,7 +23,7 @@ namespace arm
         return new_position;
     }
 
-    arm_angles inverse(position input_position, arm_constants constants, double wrist_angle)
+    arm_angles inverse(position input_position, arm_constants constants, double wrist_angle, bool elbow_up)
     {
         arm_angles calculated_angles;
         // the angles are calculated in 2 phases
@@ -39,8 +39,8 @@ namespace arm
         double link1_to_link2_z = input_position.z - constants.shoulder_height - constants.length3 * sin(wrist_angle) - constants.wrist_offset * cos(wrist_angle); 
         double link1_to_link3_squared = pow(link1_to_link2_x, 2) + pow(link1_to_link2_z, 2);
 
-        // positive for elbow down
-        calculated_angles.elbow =  - acos((link1_to_link3_squared - pow(constants.length1, 2) - pow(constants.length2, 2)) / (2 * constants.length1 * constants.length2));
+        // negative for elbow up, positive for elbow down
+        calculated_angles.elbow = (elbow_up ? -1.0 : 1.0) * acos((link1_to_link3_squared - pow(constants.length1, 2) - pow(constants.length2, 2)) / (2 * constants.length1 * constants.length2));
         calculated_angles.shoulder = atan2(link1_to_link2_z, link1_to_link2_x) - 
         atan2(constants.length2 * sin(calculated_angles.elbow), constants.length1 + constants.length2 * cos(calculated_angles.elbow));
         calculated_angles.wrist = wrist_angle - calculated_angles.shoulder - calculated_angles.elbow;

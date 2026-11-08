@@ -1,15 +1,17 @@
 // Interactive simulation of the Voyaging Arm.
 //
 // Draws the arm from the kinematics constants and lets you drive it two ways:
-//   TARGET mode: sliders set the tip position + wrist pitch, inverse() solves the joints.
+//   TARGET mode: sliders set the tip position + wrist pitch, inverse() solves the joints
+//                (elbow up if that's within the limits, else elbow down).
 //   JOINTS mode: sliders set the joint angles directly, forward() reports the tip.
+// Wrist roll and gripper have their own sliders in both modes; they don't move the tip.
 // Each slider has a text box next to its label: click it, type a value, press Enter (or click
 // away) to apply. Typed values may go past the slider's range.
 // Right-drag orbits the camera, mouse wheel zooms. F11 toggles fullscreen.
 //
 // The sliders set a target pose (drawn as a faint ghost). The solid arm glides toward it at a
 // fixed joint speed, and that gliding pose is handed to the caller every frame (see simulation.hpp).
-// A target outside VOYAGING_ARM_LIMITS (a joint too far, or too close to the table) is refused,
+// A target outside the limits (a joint too far, or too close to the table) is refused,
 // and the glide stops rather than take a step that would break them.
 // The simulation itself knows nothing about the real arm.
 
@@ -34,7 +36,7 @@ namespace {
 
 // Initial window size; the window is resizable and the layout follows GetScreenWidth/Height.
 constexpr int kInitialWidth = 1120;
-constexpr int kInitialHeight = 720;
+constexpr int kInitialHeight = 860;
 constexpr int kPanelWidth = 320;
 
 // Kinematics work in mm; 1 scene unit = 100 mm, so the ~400 mm reach is ~4 units.
@@ -62,10 +64,44 @@ double distance(const arm::position& a, const arm::position& b) {
     return std::sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z));
 }
 
+Vector3 add(Vector3 a, Vector3 b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
+Vector3 scale(Vector3 a, float k) { return {a.x * k, a.y * k, a.z * k}; }
+Vector3 cross(Vector3 a, Vector3 b) { return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x}; }
+Vector3 normalized(Vector3 a) {
+    const float n = std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+    return n > 0.0f ? scale(a, 1.0f / n) : Vector3{1, 0, 0};
+}
+
+// Jaw pivots sit this far back from the tips (ClawParams/Params.jaw_reach in Arm.FCStd), and this far
+// either side of the roll axis. Only for drawing.
+constexpr float kJawReach = 66.0f * kScale;
+constexpr float kJawPivotGap = 9.0f * kScale;
+
+// The two jaws, from their pivots to their tips. `tip` is the point where the closed tips meet,
+// `along` the roll axis (unit, pointing out of the claw).
+void drawJaws(Vector3 tip, Vector3 along, double base, double spin, double gripper, Color color) {
+    // Wrist roll 0 = jaws open side to side, i.e. across the arm's vertical plane. Positive roll turns
+    // them counter-clockwise as seen from behind the claw (see arm_calibrate).
+    const Vector3 side0 = toScene({-std::sin(base), std::cos(base), 0.0});  // the arm's left, flat
+    const Vector3 up0 = normalized(cross(along, side0));
+    const Vector3 side = add(scale(side0, float(std::cos(spin))), scale(up0, -float(std::sin(spin))));
+
+    const Vector3 pivotCentre = add(tip, scale(along, -kJawReach));
+    const float closed = std::asin(kJawPivotGap / kJawReach);  // each jaw leans in this much to meet at the tip
+    const float open = closed - float(gripper) / 2.0f;          // gripper = angle between the jaws
+    for (float sideSign : {1.0f, -1.0f}) {
+        const Vector3 pivot = add(pivotCentre, scale(side, sideSign * kJawPivotGap));
+        const Vector3 dir = add(scale(along, std::cos(open)), scale(side, -sideSign * std::sin(open)));
+        DrawCylinderEx(pivot, add(pivot, scale(dir, kJawReach)), 0.02f, 0.012f, 8, color);
+    }
+}
+
 void drawArm(const arm::arm_angles& angles, const arm::arm_constants& c) {
     const arm::joint_chain ch = arm::joint_points(angles, c);
     std::array<Vector3, 6> s{};
     for (std::size_t i = 0; i < s.size(); ++i) s[i] = toScene(ch[i]);
+    const Vector3 along = normalized(add(s[5], scale(s[4], -1.0f)));
+    const Vector3 jawPivots = add(s[5], scale(along, -kJawReach));
 
     // base disc + vertical pedestal up to shoulder height, then the small shoulder offset stub
     DrawCylinder({0, 0, 0}, 0.35f, 0.35f, 0.04f, 24, Color{90, 90, 100, 255});
@@ -77,7 +113,8 @@ void drawArm(const arm::arm_angles& angles, const arm::arm_constants& c) {
     DrawCylinderEx(s[1], s[2], 0.06f, 0.06f, 12, Color{230, 100, 60, 255});   // link 1
     DrawCylinderEx(s[2], s[3], 0.06f, 0.06f, 12, Color{60, 140, 230, 255});   // link 2
     DrawCylinderEx(s[3], s[4], 0.03f, 0.03f, 12, Color{140, 140, 140, 255});  // wrist offset stub
-    DrawCylinderEx(s[4], s[5], 0.045f, 0.03f, 12, Color{70, 180, 110, 255});  // link 3 / claw
+    DrawCylinderEx(s[4], jawPivots, 0.045f, 0.04f, 12, Color{70, 180, 110, 255});  // link 3 / claw body
+    drawJaws(s[5], along, angles.base, angles.wrist_spin, angles.gripper, Color{40, 130, 75, 255});
 
     // joints
     DrawSphere(s[1], 0.08f, DARKGRAY);
@@ -93,6 +130,9 @@ void drawGhost(const arm::arm_angles& angles, const arm::arm_constants& c) {
     for (std::size_t i = 1; i + 1 < ch.size(); ++i) {
         DrawCylinderEx(toScene(ch[i]), toScene(ch[i + 1]), 0.015f, 0.015f, 6, ghost);
     }
+    const Vector3 tip = toScene(ch[5]);
+    const Vector3 along = normalized(add(tip, scale(toScene(ch[4]), -1.0f)));
+    drawJaws(tip, along, angles.base, angles.wrist_spin, angles.gripper, ghost);
 }
 
 void drawAxes() {
@@ -105,9 +145,11 @@ void drawAxes() {
 struct UiState {
     int mode = 0;  // 0 = TARGET (IK), 1 = JOINTS (FK)
     // TARGET mode: tip position in mm, wrist pitch in degrees (absolute, 0 = horizontal)
-    float tx = 280.0f, ty = 0.0f, tz = 150.0f, tpitch = 0.0f;  // must be inside VOYAGING_ARM_LIMITS
+    float tx = 250.0f, ty = 0.0f, tz = 150.0f, tpitch = -30.0f;  // should be inside the limits (else the arm starts at all zeros)
     // JOINTS mode: joint angles in degrees
     float jbase = 0.0f, jshoulder = 0.0f, jelbow = 0.0f, jwrist = 0.0f;
+    // both modes, degrees: wrist roll (0 = jaws open side to side) and gripper (0 = closed)
+    float jspin = 0.0f, jgrip = 0.0f;
 };
 
 UiState defaultUi() { return UiState{}; }
@@ -118,6 +160,31 @@ arm::arm_angles jointsFromUi(const UiState& ui) {
     a.shoulder = deg2rad(ui.jshoulder);
     a.elbow = deg2rad(ui.jelbow);
     a.wrist = deg2rad(ui.jwrist);
+    a.wrist_spin = deg2rad(ui.jspin);
+    a.gripper = deg2rad(ui.jgrip);
+    return a;
+}
+
+// Joints for a tip position + wrist pitch: elbow up if that's safe, else elbow down if that is.
+// When neither is, the elbow-up one, so the panel can say why.
+arm::arm_angles solve(const arm::position& p, double pitch, const arm::arm_constants& c, const arm::arm_limits& limits) {
+    const arm::arm_angles up = arm::inverse(p, c, pitch, true);
+    if (isValid(up) && arm::why_unsafe(up, c, limits).empty()) return up;
+    const arm::arm_angles down = arm::inverse(p, c, pitch, false);
+    if (isValid(down) && arm::why_unsafe(down, c, limits).empty()) return down;
+    return up;
+}
+
+// The pose RESET and startup go to: the default target if it's safe, else all zeros.
+arm::arm_angles startPose(const UiState& ui, const arm::arm_constants& c, const arm::arm_limits& limits) {
+    arm::arm_angles a = solve({ui.tx, ui.ty, ui.tz}, deg2rad(ui.tpitch), c, limits);
+    a.wrist_spin = deg2rad(ui.jspin);
+    a.gripper = deg2rad(ui.jgrip);
+    if (!isValid(a) || !arm::why_unsafe(a, c, limits).empty()) {
+        a = arm::arm_angles{};
+        a.wrist_spin = deg2rad(ui.jspin);
+        a.gripper = deg2rad(ui.jgrip);
+    }
     return a;
 }
 
@@ -185,9 +252,8 @@ void readoutRow(int x, int& y, const char* text, Color color = DARKGRAY) {
 
 }  // namespace
 
-void arm::run_simulation(const pose_sink& on_pose) {
+void arm::run_simulation(const pose_sink& on_pose, const arm_limits& limits) {
     const arm::arm_constants c = arm::VOYAGING_ARM;
-    const arm::arm_limits limits = arm::VOYAGING_ARM_LIMITS;
 
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(kInitialWidth, kInitialHeight, "Voyaging Arm");
@@ -203,9 +269,13 @@ void arm::run_simulation(const pose_sink& on_pose) {
     cam.projection = CAMERA_PERSPECTIVE;
 
     UiState ui = defaultUi();
-    std::array<Field, 4> fields{};  // one per slider row; only one mode's rows show at a time
-    arm::arm_angles lastValid = arm::inverse({ui.tx, ui.ty, ui.tz}, c, deg2rad(ui.tpitch));
-    if (!isValid(lastValid)) lastValid = arm::arm_angles{};
+    ui.jspin = std::clamp(ui.jspin, float(rad2deg(limits.wrist_spin.min)), float(rad2deg(limits.wrist_spin.max)));
+    ui.jgrip = std::clamp(ui.jgrip, float(rad2deg(limits.gripper.min)), float(rad2deg(limits.gripper.max)));
+    const UiState initialUi = ui;
+    // 0..3: one per mode-specific slider row (only one mode's show at a time); 4, 5: wrist roll, gripper
+    std::array<Field, 6> fields{};
+    arm::arm_angles lastValid = startPose(ui, c, limits);
+    if (ui.mode == 1) seedJointsFrom(ui, lastValid);
     arm::arm_angles commanded = lastValid;  // where the arm is right now, gliding toward the target
 
     // Debug aid: ARM_SIMULATION_SCREENSHOT=/path/out.png saves a frame after startup and quits.
@@ -260,11 +330,24 @@ void arm::run_simulation(const pose_sink& on_pose) {
             sliderRow(px, y, pw, "z", "mm", &ui.tz, -100.0f, 500.0f, fields[2]);
             sliderRow(px, y, pw, "wrist pitch", "deg", &ui.tpitch, -180.0f, 180.0f, fields[3]);
 
+            limitedSliderRow(px, y, pw, "wrist roll", &ui.jspin, limits.wrist_spin, fields[4]);
+            limitedSliderRow(px, y, pw, "gripper", &ui.jgrip, limits.gripper, fields[5]);
+
             target = {ui.tx, ui.ty, ui.tz};
-            const arm::arm_angles sol = arm::inverse(target, c, deg2rad(ui.tpitch));
+            arm::arm_angles sol = solve(target, deg2rad(ui.tpitch), c, limits);
+            sol.wrist_spin = deg2rad(ui.jspin);
+            sol.gripper = deg2rad(ui.jgrip);
             reachable = isValid(sol);
             if (reachable) blocked = arm::why_unsafe(sol, c, limits);
-            if (reachable && blocked.empty()) lastValid = sol;
+            if (reachable && blocked.empty()) {
+                lastValid = sol;
+            } else {
+                // the target is out, but roll and gripper don't depend on it: still move them
+                arm::arm_angles held = lastValid;
+                held.wrist_spin = sol.wrist_spin;
+                held.gripper = sol.gripper;
+                if (arm::why_unsafe(held, c, limits).empty()) lastValid = held;
+            }
             shown = lastValid;
 
             y += 8;
@@ -283,8 +366,10 @@ void arm::run_simulation(const pose_sink& on_pose) {
             // each slider spans exactly its joint's limits; typed values are held to them too
             limitedSliderRow(px, y, pw, "base", &ui.jbase, limits.base, fields[0]);
             limitedSliderRow(px, y, pw, "shoulder", &ui.jshoulder, limits.shoulder, fields[1]);
-            limitedSliderRow(px, y, pw, "elbow", &ui.jelbow, limits.elbow, fields[2]);  // inverse() returns negative (elbow-up)
+            limitedSliderRow(px, y, pw, "elbow", &ui.jelbow, limits.elbow, fields[2]);  // negative = elbow up
             limitedSliderRow(px, y, pw, "wrist", &ui.jwrist, limits.wrist, fields[3]);
+            limitedSliderRow(px, y, pw, "wrist roll", &ui.jspin, limits.wrist_spin, fields[4]);
+            limitedSliderRow(px, y, pw, "gripper", &ui.jgrip, limits.gripper, fields[5]);
 
             const arm::arm_angles wanted = jointsFromUi(ui);
             blocked = arm::why_unsafe(wanted, c, limits);
@@ -304,10 +389,9 @@ void arm::run_simulation(const pose_sink& on_pose) {
         y += 12;
         if (GuiButton(Rectangle{float(px), float(y), float(pw), 30.0f}, "RESET")) {
             const int keepMode = ui.mode;
-            ui = defaultUi();
+            ui = initialUi;
             ui.mode = keepMode;
-            lastValid = arm::inverse({ui.tx, ui.ty, ui.tz}, c, deg2rad(ui.tpitch));
-            if (!isValid(lastValid)) lastValid = arm::arm_angles{};
+            lastValid = startPose(ui, c, limits);
             if (ui.mode == 1) seedJointsFrom(ui, lastValid);
             for (Field& f : fields) f.editing = false;
         }

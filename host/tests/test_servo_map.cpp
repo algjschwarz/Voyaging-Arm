@@ -95,3 +95,31 @@ TEST(CalibrationFile, RejectsUnknownJoint) {
     EXPECT_THROW(load_partial_calibration(path), std::runtime_error);
     std::remove(path.c_str());
 }
+
+TEST(ServoTravel, CoversTheCommandRange) {
+    // default: command 90 = 0 deg, 180 = 90 deg, so 0..180 reaches -90..90 deg
+    const joint_range r = servo_travel(servo_cal{});
+    EXPECT_NEAR(r.min, -kPi / 2, kTol);
+    EXPECT_NEAR(r.max, kPi / 2, kTol);
+}
+
+TEST(ServoTravel, MirroredServoStillGivesMinBelowMax) {
+    // like the wrist roll: 0 deg at command 180, 90 deg at command 90
+    const joint_range r = servo_travel({.joint_a = 0, .cmd_a = 180, .joint_b = 90, .cmd_b = 90});
+    EXPECT_NEAR(r.min, 0, kTol);
+    EXPECT_NEAR(r.max, kPi, kTol);
+}
+
+TEST(ServoTravel, NarrowsLimitsOnlyWhereTheServoFallsShort) {
+    servo_calibration cal = allDefault();  // every joint reaches -90..90 deg
+    const arm_limits wide{.base = {-1, 1}, .shoulder = {-2, 2}, .elbow = {-1, 3}, .wrist = {-3, 1},
+                          .wrist_spin = {-0.5, 0.5}, .gripper = {0, 1}, .ground_clearance = 7};
+    const arm_limits l = within_servo_travel(wide, cal);
+    EXPECT_NEAR(l.base.min, -1, kTol);
+    EXPECT_NEAR(l.shoulder.min, -kPi / 2, kTol);
+    EXPECT_NEAR(l.shoulder.max, kPi / 2, kTol);
+    EXPECT_NEAR(l.elbow.max, kPi / 2, kTol);
+    EXPECT_NEAR(l.wrist.min, -kPi / 2, kTol);
+    EXPECT_NEAR(l.wrist_spin.max, 0.5, kTol);
+    EXPECT_EQ(l.ground_clearance, 7);
+}

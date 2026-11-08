@@ -3,9 +3,11 @@
 // Every servo must be calibrated first (arm_calibrate). For the simulation alone, run arm_simulation.
 //
 // The simulation hands over the pose every frame; this sends it to the Arduino 50 times a second.
+// Its sliders stop where the servos stop (as calibrated), so it never shows a pose the arm can't reach.
 
 #include "arm/serial_link.hpp"
 #include "arm/servo_map.hpp"
+#include "arm/limits.hpp"
 #include "arm/simulation.hpp"
 
 #include <cstdio>
@@ -50,7 +52,7 @@ int main(int argc, char** argv) {
             }
             if (!arduinoError.empty()) return {"arduino: " + arduinoError, false};
             return {"arm: " + port, true};
-        });
+        }, arm::within_servo_travel(arm::VOYAGING_ARM_LIMITS, servos));
 
         if (alive) link.write_line("R");  // window closed: let every servo go limp
     } catch (const std::exception& e) {

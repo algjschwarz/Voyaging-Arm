@@ -31,6 +31,31 @@ namespace arm
         };
     }
 
+    joint_range servo_travel(const servo_cal& c)
+    {
+        const auto angle_at = [&](double cmd) {
+            const double deg = c.joint_a + (cmd - c.cmd_a) * (c.joint_b - c.joint_a) / (c.cmd_b - c.cmd_a);
+            return deg * std::numbers::pi / 180.0;
+        };
+        const double a = angle_at(c.min_cmd), b = angle_at(c.max_cmd);
+        return {std::min(a, b), std::max(a, b)};
+    }
+
+    arm_limits within_servo_travel(arm_limits limits, const servo_calibration& cal)
+    {
+        const auto narrow = [](joint_range& r, const joint_range& travel) {
+            r.min = std::max(r.min, travel.min);
+            r.max = std::min(r.max, travel.max);
+        };
+        narrow(limits.base, servo_travel(cal[0]));
+        narrow(limits.shoulder, servo_travel(cal[1]));
+        narrow(limits.elbow, servo_travel(cal[2]));
+        narrow(limits.wrist, servo_travel(cal[3]));
+        narrow(limits.wrist_spin, servo_travel(cal[4]));
+        narrow(limits.gripper, servo_travel(cal[5]));
+        return limits;
+    }
+
     std::string to_arduino_line(const std::array<double, 6>& servo_commands)
     {
         std::ostringstream line;

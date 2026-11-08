@@ -1,5 +1,6 @@
 #pragma once
 #include "arm/kinematics.hpp"
+#include "arm/limits.hpp"
 #include <array>
 #include <optional>
 #include <string>
@@ -27,6 +28,13 @@ namespace arm {
 
     // The command each servo needs for the arm to reach `pose`, firmware order.
     std::array<double, 6> to_servo_commands(const arm_angles& pose, const servo_calibration& cal);
+
+    // The joint angles (radians) one servo reaches across its commands min_cmd..max_cmd.
+    joint_range servo_travel(const servo_cal& c);
+
+    // `limits` narrowed to what the servos can reach. Past a servo's travel its command is clamped, so the
+    // real joint would stop short while the simulation kept going; with these limits the two always agree.
+    arm_limits within_servo_travel(arm_limits limits, const servo_calibration& cal);
 
     // The line of text the Arduino reads to move all six servos, e.g. "P 90.0 45.0 120.0 90.0 90.0 30.0".
     // No trailing newline; serial_link::write_line adds it.

@@ -38,6 +38,22 @@ TEST(Forward, RealArmAtZeroShowsTheOffsets) {
     EXPECT_NEAR(p.z, c.shoulder_height + c.wrist_offset, kTol);
 }
 
+TEST(Inverse, ElbowDownRoundTripsThroughForward) {
+    const arm_constants& c = VOYAGING_ARM;
+    const arm_angles cases[] = {
+        {.base = 0.3, .shoulder = 0.2, .elbow = 0.8, .wrist = -1.5},
+        {.base = -0.7, .shoulder = 0.5, .elbow = 1.2, .wrist = -0.4},
+    };
+    for (const arm_angles& in : cases) {
+        position p = forward(in, c);
+        arm_angles out = inverse(p, c, in.shoulder + in.elbow + in.wrist, false);
+        EXPECT_NEAR(out.base, in.base, kTol);
+        EXPECT_NEAR(out.shoulder, in.shoulder, kTol);
+        EXPECT_NEAR(out.elbow, in.elbow, kTol);
+        EXPECT_NEAR(out.wrist, in.wrist, kTol);
+    }
+}
+
 TEST(Inverse, RoundTripsThroughForwardOnTheRealArm) {
     const arm_constants& c = VOYAGING_ARM;
     // inverse() always picks the elbow-up branch, which is a negative elbow angle

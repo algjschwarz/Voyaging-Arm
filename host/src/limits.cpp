@@ -20,15 +20,19 @@ namespace arm
     std::string why_unsafe(const arm_angles& pose, const arm_constants& constants, const arm_limits& limits)
     {
         struct joint { const char* name; double angle; joint_range range; };
-        const std::array<joint, 4> joints{{
+        const std::array<joint, 6> joints{{
             {"base", pose.base, limits.base},
             {"shoulder", pose.shoulder, limits.shoulder},
             {"elbow", pose.elbow, limits.elbow},
             {"wrist", pose.wrist, limits.wrist},
+            {"wrist roll", pose.wrist_spin, limits.wrist_spin},
+            {"gripper", pose.gripper, limits.gripper},
         }};
+        // A hair of slack, so a slider sitting exactly on a limit (radians -> float degrees -> radians) counts as inside.
+        constexpr double kSlack = 1e-6;
         for (const auto& [name, angle, range] : joints) {
-            if (angle < range.min) return past(name, range.min);
-            if (angle > range.max) return past(name, range.max);
+            if (angle < range.min - kSlack) return past(name, range.min);
+            if (angle > range.max + kSlack) return past(name, range.max);
         }
 
         // The shoulder axis never moves, so only the points after it can reach the table.

@@ -144,8 +144,15 @@ std::string looksLike(int joint, double angle) {
             case -90: return "arm pointing straight backward";
         } break;
         case 1: return tiltText("upper arm", a);
-        case 2: return tiltText("forearm", a);
-        case 3: return tiltText("gripper", a);
+        // The upper arm is held straight up for the elbow, and the forearm flat for the wrist; say what that
+        // means between the parts too, since "flat" alone is easy to read as "in line with the part before".
+        case 2:
+            if (a == 0) return "forearm flat, pointing forward: a right angle to the upper arm";
+            if (a == 90) return "forearm straight up: in line with the upper arm";
+            return tiltText("forearm", a);
+        case 3:
+            if (a == 0) return "gripper flat, pointing forward: in line with the forearm";
+            return tiltText("gripper", a);
         case 4: switch (a) {  // seen from behind the gripper
             case 0: return "jaws open side to side";
             case 90: return "jaws open up/down (a quarter turn counter-clockwise)";

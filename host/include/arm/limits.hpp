@@ -18,6 +18,8 @@ namespace arm {
         joint_range shoulder;
         joint_range elbow;
         joint_range wrist;
+        joint_range wrist_spin;
+        joint_range gripper;
         double ground_clearance = 0;  // mm every joint and the tip must stay above the table (z = 0)
     };
 
@@ -32,6 +34,8 @@ namespace arm {
         .shoulder = {detail::deg(-26), detail::deg(139)},   // ArmLink hits the Rotator at -31.5 / +144.5
         .elbow = {detail::deg(-135), detail::deg(135)},     // UpperArm hits ArmLink at +-140.5
         .wrist = {detail::deg(-122), detail::deg(121)},     // WristLink hits UpperArm at -127.1 / +126.9
+        .wrist_spin = {detail::deg(-180), detail::deg(180)}, // no collision; the servo travel is the real limit
+        .gripper = {detail::deg(0), detail::deg(90)},       // 0 = jaws closed; 90 = widest opening calibrated
         .ground_clearance = 10.0,
     };
 

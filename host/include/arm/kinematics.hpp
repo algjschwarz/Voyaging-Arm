@@ -35,8 +35,10 @@ namespace arm{
     };
 
     position forward(arm_angles input_angles, arm_constants constants);
-    // wrist_angle is in radians, calculates values assuming link 3 is the end of the arm 
-    arm_angles inverse(position input_position, arm_constants constants, double wrist_angle);
+    // wrist_angle is in radians, calculates values assuming link 3 is the end of the arm.
+    // elbow_up picks the negative-elbow solution; false gives the other one (positive elbow, elbow below the line
+    // from shoulder to wrist). Both put the tip at the same point.
+    arm_angles inverse(position input_position, arm_constants constants, double wrist_angle, bool elbow_up = true);
 
     // Every point along the chain, same math as forward() but keeping the points in between:
     //   0 base origin, 1 shoulder axis, 2 elbow axis, 3 wrist pitch axis,

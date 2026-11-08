@@ -1,5 +1,6 @@
 #pragma once
 #include "arm/kinematics.hpp"
+#include "arm/limits.hpp"
 #include <functional>
 #include <string>
 
@@ -17,5 +18,7 @@ namespace arm {
 
     // Opens the simulation window and runs until it is closed.
     // With no sink it is a simulation only; give it one to drive something real.
-    void run_simulation(const pose_sink& on_pose = {});
+    // `limits` bound every slider and pose. To match a real arm, narrow them to its servos'
+    // travel first (within_servo_travel in servo_map.hpp).
+    void run_simulation(const pose_sink& on_pose = {}, const arm_limits& limits = VOYAGING_ARM_LIMITS);
 }
