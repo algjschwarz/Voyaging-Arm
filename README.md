@@ -10,9 +10,10 @@ second over serial.
 
 - Drive the arm by **tip position** (inverse kinematics) or by **joint angles** (forward kinematics)
   from a 3D simulation. The target pose shows as a ghost and the arm glides toward it.
+  Wrist roll and gripper have their own sliders in both modes.
 - The same program drives the real arm: every frame's pose goes to an Arduino Uno over serial.
-- Unsafe targets are refused: joints past their CAD collision limits, or any joint or the tip
-  closer than 10 mm to the table.
+- Unsafe targets are refused: joints past their CAD collision limits or their servo's calibrated
+  travel, or any joint or the tip closer than 10 mm to the table.
 - Every in between step is checked too. Two safe poses can still have an unsafe one between them
   (swinging the claw through the table), so the arm holds still rather than take that step.
 - Link lengths come straight from the CAD file, so the kinematics always match the arm as built.
@@ -51,10 +52,12 @@ the host knows when it can send.
 **Kinematics** (`host/src/kinematics.cpp`). Base yaw plus a planar shoulder, elbow, wrist chain,
 including the shoulder and wrist offsets from the CAD. Inverse kinematics solves base yaw first
 from the target's x and y, then the shoulder and elbow as a two link problem in the arm's vertical
-plane, then the wrist from the requested pitch.
+plane, then the wrist from the requested pitch. It picks elbow up, and falls back to elbow down
+when elbow up is outside the limits.
 
 **Joint limits** (`host/include/arm/limits.hpp`). Found by sweeping each joint in the CAD until
-parts collide, then backing off a 5 degree margin.
+parts collide, then backing off a 5 degree margin. Both programs then narrow them to what each
+servo reaches as calibrated, so the simulation never shows a pose the real servo would stop short of.
 
 **Motion** (`host/src/motion.cpp`). Every joint moves toward its target at no more than 90 deg/s,
 below the MG996R's top speed. Each step is safety checked before it is sent.
@@ -88,8 +91,8 @@ python3 tools/export_geometry.py
 
 ## Tests
 
-25 GoogleTest unit tests across kinematics (forward and inverse agree, known poses), joint limits
-and the ground check, rate limited motion, and servo mapping and calibration file parsing.
+29 GoogleTest unit tests across kinematics (forward and inverse agree, known poses), joint limits
+and the ground check, rate limited motion, and servo mapping, servo travel and calibration file parsing.
 
 ## Repo layout
 
